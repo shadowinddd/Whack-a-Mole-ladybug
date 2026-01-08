@@ -3,6 +3,10 @@ import { BugType, GameState } from './types';
 import { RenderBug, HammerIcon, CrossIcon, PauseIcon, PlayIcon, HomeIcon, VolumeIcon, MuteIcon } from './components/BugIcons';
 import { initAudio, playScoreSound, playErrorSound, playGameOverSound, playClickSound, startBGM, stopBGM, toggleMute, playHitSound } from './audio';
 
+// --- Configuration ---
+// 修改此处：这是你未来的游戏集成主页地址
+const GAME_PORTAL_URL = 'https://egggame.online';
+
 // --- Constants ---
 const GRID_SIZE = 9;
 const GAME_DURATION = 60; // seconds
@@ -655,6 +659,12 @@ export default function App() {
             >
                 开始游戏!
             </button>
+             {/* Back to Game Center Link (Absolute URL) */}
+            <div className="mt-6">
+                 <a href={GAME_PORTAL_URL} className="text-sky-600 hover:text-sky-800 font-bold text-lg underline decoration-2 underline-offset-4 transition-colors">
+                     返回游戏大厅
+                 </a>
+            </div>
           </div>
         </div>
       )}
