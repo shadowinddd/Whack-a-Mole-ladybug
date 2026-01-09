@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { BugType, GameState } from './types';
-import { RenderBug, HammerIcon, CrossIcon, PauseIcon, PlayIcon, HomeIcon, VolumeIcon, MuteIcon } from './components/BugIcons';
+import { BugType, GameState, Difficulty } from './types';
+import { RenderBug, CrossIcon, PauseIcon, PlayIcon, HomeIcon, VolumeIcon, MuteIcon, RefreshIcon } from './components/BugIcons';
 import { initAudio, playScoreSound, playErrorSound, playGameOverSound, playClickSound, startBGM, stopBGM, toggleMute, playHitSound } from './audio';
 
 // --- Configuration ---
@@ -10,7 +10,7 @@ const GAME_PORTAL_URL = 'https://egggame.online';
 // --- Constants ---
 const GRID_SIZE = 9;
 const GAME_DURATION = 60; // seconds
-const BUG_STAY_DURATION = 2000; // ms (bugs stay up for 2 seconds)
+const BUG_STAY_DURATION = 2000; // ms (bugs stay up for 2 seconds - Normal/Easy base)
 const SPAWN_INTERVAL = 1000; // ms (try to spawn new bugs every second)
 
 // Define character pools
@@ -46,55 +46,6 @@ const BUG_NAMES: Record<BugType, string> = {
 };
 
 // --- Components ---
-
-// 1. Custom Cursor Component
-const CustomCursor = ({ bugType }: { bugType: BugType }) => {
-  const [position, setPosition] = useState({ x: 0, y: 0 });
-  const [isClicking, setIsClicking] = useState(false);
-  const [isVisible, setIsVisible] = useState(false);
-
-  useEffect(() => {
-    const updatePosition = (e: MouseEvent) => {
-      setPosition({ x: e.clientX, y: e.clientY });
-      setIsVisible(true);
-    };
-    const handleMouseDown = () => setIsClicking(true);
-    const handleMouseUp = () => setIsClicking(false);
-    const handleMouseLeave = () => setIsVisible(false);
-
-    window.addEventListener('mousemove', updatePosition);
-    window.addEventListener('mousedown', handleMouseDown);
-    window.addEventListener('mouseup', handleMouseUp);
-    document.body.addEventListener('mouseleave', handleMouseLeave);
-
-    return () => {
-      window.removeEventListener('mousemove', updatePosition);
-      window.removeEventListener('mousedown', handleMouseDown);
-      window.removeEventListener('mouseup', handleMouseUp);
-      document.body.removeEventListener('mouseleave', handleMouseLeave);
-    };
-  }, []);
-
-  if (!isVisible) return null;
-
-  return (
-    <div
-      className="fixed pointer-events-none z-50 transition-transform duration-75 hidden md:block"
-      style={{
-        left: position.x,
-        top: position.y,
-        transform: `translate(-50%, -50%) scale(${isClicking ? 0.8 : 1}) rotate(-15deg)`,
-      }}
-    >
-      <div className="relative">
-        <RenderBug type={bugType} className="w-16 h-16 drop-shadow-2xl filter" />
-        <div className="absolute -top-2 -right-2 bg-yellow-400 text-xs font-bold px-2 py-0.5 rounded-full border border-black shadow">
-          警长
-        </div>
-      </div>
-    </div>
-  );
-};
 
 // 2. The Game Hole Component
 interface HoleProps {
@@ -137,7 +88,7 @@ const Hole: React.FC<HoleProps> = ({ index, bugType, onWhack, effect }) => {
         <div className={`w-full relative ${bugType !== BugType.NONE && effect !== 'CAUGHT' ? 'animate-bounce-small' : ''}`}>
              <RenderBug 
                 type={bugType} 
-                className={`w-full drop-shadow-xl ${effect === 'CAUGHT' ? 'animate-shake' : ''}`} 
+                className={`w-full drop-shadow-xl ${effect === 'CAUGHT' ? 'animate-shake opacity-50 grayscale transition-all duration-300' : ''}`} 
                 isDizzy={effect === 'CAUGHT'}
              />
         </div>
@@ -162,11 +113,7 @@ const Hole: React.FC<HoleProps> = ({ index, bugType, onWhack, effect }) => {
       </div>
 
       {/* Effects */}
-      {effect === 'CAUGHT' && (
-         <div className="absolute bottom-[30%] -right-[15%] z-40 w-[120%] animate-hammer-hit pointer-events-none origin-bottom-right">
-             <HammerIcon className="w-full drop-shadow-2xl" />
-         </div>
-      )}
+      {/* REMOVED HAMMER ICON HERE */}
 
       {effect === 'WRONG' && (
          <div className="absolute -top-4 z-30 w-2/3 animate-bounce-in pointer-events-none">
@@ -179,12 +126,6 @@ const Hole: React.FC<HoleProps> = ({ index, bugType, onWhack, effect }) => {
               0%, 100% { transform: translateY(0) scaleY(1); }
               50% { transform: translateY(-5%) scaleY(1.05); }
           }
-          @keyframes hammer-hit {
-              0% { transform: rotate(45deg) scale(0.8); opacity: 0; }
-              20% { transform: rotate(45deg) scale(1.1); opacity: 1; }
-              50% { transform: rotate(-45deg) scale(1); }
-              100% { transform: rotate(-45deg) scale(1); opacity: 0; }
-          }
           @keyframes shake {
               0%, 100% { transform: translateX(0); }
               25% { transform: translateX(-5px) rotate(-5deg); }
@@ -192,9 +133,6 @@ const Hole: React.FC<HoleProps> = ({ index, bugType, onWhack, effect }) => {
           }
           .animate-bounce-small {
               animation: bounce-small 2s infinite ease-in-out;
-          }
-          .animate-hammer-hit {
-              animation: hammer-hit 0.4s ease-out forwards;
           }
           .animate-shake {
               animation: shake 0.3s ease-in-out infinite;
@@ -276,6 +214,7 @@ export default function App() {
   // Settings
   const [sheriffBug, setSheriffBug] = useState<BugType>(BugType.LADYBUG);
   const [moleBugs, setMoleBugs] = useState<BugType[]>([BugType.FLY, BugType.BEE, BugType.LOCUST]);
+  const [difficulty, setDifficulty] = useState<Difficulty>('NORMAL');
   
   // Audio State
   const [isMuted, setIsMuted] = useState(false);
@@ -294,6 +233,12 @@ export default function App() {
   
   const [hitFeedback, setHitFeedback] = useState<{id: number, x: number, y: number, text: string, color: string}[]>([]);
 
+  // --- Sheriff Animation State ---
+  const sheriffHomeRef = useRef<HTMLDivElement>(null);
+  const [sheriffPos, setSheriffPos] = useState<{x: number, y: number, scale: number} | null>(null);
+  const returnTimerRef = useRef<number | null>(null);
+  const [sheriffLookingRight, setSheriffLookingRight] = useState(false);
+
   // Loop Management
   const timerRef = useRef<number | null>(null);
   const spawnIntervalRef = useRef<number | null>(null);
@@ -306,6 +251,30 @@ export default function App() {
 
   // --- Logic ---
 
+  // Initialize/Reset Sheriff Position to Home
+  const returnSheriffHome = useCallback(() => {
+      if (sheriffHomeRef.current) {
+          const rect = sheriffHomeRef.current.getBoundingClientRect();
+          setSheriffPos({
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+              scale: 1
+          });
+          setSheriffLookingRight(false);
+      }
+  }, []);
+
+  // Update home position on resize or game start
+  useEffect(() => {
+      if (gameState === 'PLAYING' || gameState === 'PAUSED') {
+          // Small delay to ensure layout is done
+          setTimeout(returnSheriffHome, 100);
+          window.addEventListener('resize', returnSheriffHome);
+          return () => window.removeEventListener('resize', returnSheriffHome);
+      }
+  }, [gameState, returnSheriffHome]);
+
+
   // Generate a new batch of bugs
   const spawnBugs = useCallback(() => {
     // 1. Identify empty holes using the latest grid from ref
@@ -314,10 +283,27 @@ export default function App() {
     
     if (emptyIndices.length === 0) return;
 
-    // 2. Decide how many to spawn (1 to 3, but not more than available)
-    const count = Math.min(Math.floor(Math.random() * 3) + 1, emptyIndices.length);
+    // 2. Determine Difficulty Params
+    let countMin = 1;
+    let countMax = 3;
+    let stayDuration = BUG_STAY_DURATION; // 2000ms
 
-    // 3. Select random unique holes
+    if (difficulty === 'EASY') {
+        countMin = 1;
+        countMax = 1;
+        stayDuration = 2000;
+    } else if (difficulty === 'HARD') {
+        countMin = 2;
+        countMax = 3;
+        stayDuration = 1500; // Faster retract
+    }
+    // Normal is default: 1-3, 2000ms
+
+    // 3. Decide how many to spawn (Bounded by empty slots)
+    const randomCount = Math.floor(Math.random() * (countMax - countMin + 1)) + countMin;
+    const count = Math.min(randomCount, emptyIndices.length);
+
+    // 4. Select random unique holes
     const selectedIndices: number[] = [];
     const pool = [...emptyIndices];
     for(let i=0; i<count; i++) {
@@ -326,7 +312,7 @@ export default function App() {
         pool.splice(randIndex, 1);
     }
 
-    // 4. Update Grid and Set Individual Timeouts
+    // 5. Update Grid and Set Individual Timeouts
     const possibleBugs = ALL_GAME_BUGS.filter(b => b !== sheriffBug);
     
     setGrid(prev => {
@@ -349,14 +335,14 @@ export default function App() {
                      return gNext;
                  });
                  delete holeTimeoutsRef.current[idx];
-             }, BUG_STAY_DURATION); 
+             }, stayDuration); 
              
              holeTimeoutsRef.current[idx] = timeoutId;
         });
         return next;
     });
 
-  }, [sheriffBug]);
+  }, [sheriffBug, difficulty]);
 
 
   // Game Loop and Timer
@@ -378,6 +364,7 @@ export default function App() {
 
       // Initial spawn
       spawnBugs();
+      returnSheriffHome();
 
     } else {
       // Cleanup when not playing
@@ -393,7 +380,7 @@ export default function App() {
       if (timerRef.current) clearInterval(timerRef.current);
       if (spawnIntervalRef.current) clearInterval(spawnIntervalRef.current);
     };
-  }, [gameState, spawnBugs]);
+  }, [gameState, spawnBugs, returnSheriffHome]);
 
   // Handle Game Over Sound
   useEffect(() => {
@@ -494,9 +481,33 @@ export default function App() {
         playScoreSound();
         playHitSound();
         
-        // Trigger Hammer Animation & Dizzy State
+        // Trigger Dizzy State
         setHoleEffects(prev => ({ ...prev, [index]: 'CAUGHT' }));
         showFeedback("+10", "text-yellow-400");
+
+        // --- Sheriff Animation Logic ---
+        const holeEl = document.getElementById(`hole-${index}`);
+        if (holeEl) {
+            const rect = holeEl.getBoundingClientRect();
+            // Target position: slightly above center of hole to look like catching
+            const targetX = rect.left + rect.width / 2;
+            const targetY = rect.top + rect.height / 2 - 20;
+
+            // Determine facing direction based on current sheriff pos
+            if (sheriffPos) {
+                setSheriffLookingRight(targetX > sheriffPos.x);
+            }
+
+            // Move Sheriff to target
+            setSheriffPos({ x: targetX, y: targetY, scale: 1.2 }); // Scale up slightly on catch
+
+            // Handle Return Logic
+            if (returnTimerRef.current) clearTimeout(returnTimerRef.current);
+            returnTimerRef.current = window.setTimeout(() => {
+                returnSheriffHome();
+                returnTimerRef.current = null;
+            }, 600); // Stay at hole for a bit, then return
+        }
         
         // Clear effect and bug after animation
         setTimeout(() => {
@@ -515,7 +526,7 @@ export default function App() {
                  }
                  return next;
              });
-        }, 600); // 600ms to allow hammer hit + dizzy look
+        }, 600); // Sync with Sheriff stay duration
 
     } else {
         // HIT WRONG TARGET
@@ -558,52 +569,82 @@ export default function App() {
       playClickSound();
       setSheriffBug(bug);
   };
+  
+  const selectDifficulty = (diff: Difficulty) => {
+      playClickSound();
+      setDifficulty(diff);
+  }
 
   return (
     <div className="min-h-screen bg-green-200 flex flex-col items-center select-none overflow-hidden relative font-sans">
       <GardenBackground />
-      <CustomCursor bugType={sheriffBug} />
+      {/* Removed Custom Cursor to focus on Sheriff Actor */}
       
-      {/* Global Mute Button */}
-      <button 
+      {/* Global Mute Button - Wood Sign Style - Fixed Top Left */}
+      <div 
         onClick={handleToggleMute}
-        className="fixed top-4 left-4 z-50 bg-white/80 p-2 rounded-full border-2 border-slate-400 shadow hover:bg-white active:scale-95 transition-all"
+        className="fixed top-0 left-4 z-50 flex flex-col items-center group cursor-pointer"
+        role="button"
         aria-label="Toggle Mute"
       >
-        {isMuted ? (
-            <MuteIcon className="w-8 h-8 text-slate-500" />
-        ) : (
-            <VolumeIcon className="w-8 h-8 text-slate-700" />
-        )}
-      </button>
+        {/* Ropes hanging from top - Shortened for mobile */}
+        <div className="flex gap-4 h-4 md:h-6 w-full justify-center">
+            <div className="w-1 h-full bg-[#5D4037]"></div>
+            <div className="w-1 h-full bg-[#5D4037]"></div>
+        </div>
+        {/* The Wood Board */}
+        <div className="bg-[#FFECB3] border-4 border-[#5D4037] rounded-xl p-2 shadow-lg -mt-1 active:translate-y-1 transition-transform group-hover:rotate-3">
+             {isMuted ? (
+                <MuteIcon className="w-6 h-6 text-[#5D4037]" />
+            ) : (
+                <VolumeIcon className="w-6 h-6 text-[#5D4037]" />
+            )}
+        </div>
+      </div>
+      
+      {/* Pause Button - Wood Sign Style - Fixed Top Right (Moved out of Header) */}
+      {gameState === 'PLAYING' && (
+        <div 
+            onClick={pauseGame}
+            className="fixed top-0 right-4 z-50 flex flex-col items-center group cursor-pointer"
+            role="button"
+            aria-label="Pause Game"
+        >
+            {/* Ropes - Shortened for mobile */}
+            <div className="flex gap-4 h-4 md:h-6 w-full justify-center">
+                <div className="w-1 h-full bg-[#5D4037]"></div>
+                <div className="w-1 h-full bg-[#5D4037]"></div>
+            </div>
+            {/* The Wood Board */}
+            <div className="bg-[#FFECB3] border-4 border-[#5D4037] rounded-xl p-2 shadow-lg -mt-1 active:translate-y-1 transition-transform group-hover:-rotate-3">
+                <PauseIcon className="w-6 h-6 text-[#5D4037]" />
+            </div>
+        </div>
+      )}
       
       {/* --- HUD (Only in Game) --- */}
       {(gameState === 'PLAYING' || gameState === 'PAUSED') && (
-        <header className="w-full max-w-2xl flex justify-between items-center p-4 z-20 mt-2 relative">
-            {/* Pause Button */}
-            {gameState === 'PLAYING' && (
-                <button 
-                    onClick={pauseGame}
-                    className="absolute -top-2 right-4 md:right-0 bg-white/80 p-2 rounded-full border-2 border-slate-400 shadow-lg hover:bg-white active:scale-95 transition-all z-50"
-                    aria-label="Pause Game"
-                >
-                    <PauseIcon className="w-8 h-8 text-slate-700" />
-                </button>
-            )}
-
+        // Added mt-14 to push HUD down below the hanging signs on mobile
+        <header className="w-full max-w-2xl flex justify-between items-center p-4 z-20 mt-14 md:mt-2 relative transition-all duration-300">
+            
+            {/* Score Board */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl px-4 py-2 border-2 border-sky-500 shadow-lg transform -rotate-2">
                 <span className="text-sky-800 font-bold text-lg md:text-xl block text-center">得分</span>
                 <span className="text-3xl md:text-4xl font-black text-sky-600 block text-center">{score}</span>
             </div>
 
-            <div className="relative">
+            {/* Timer & Sheriff Home */}
+            <div className="relative flex flex-col items-center">
                 <div className="bg-white/90 backdrop-blur rounded-full w-24 h-24 flex items-center justify-center border-4 border-yellow-400 shadow-xl z-10">
                     <span className={`text-4xl font-black ${timeLeft < 10 ? 'text-red-500 animate-pulse' : 'text-slate-700'}`}>
                         {timeLeft}
                     </span>
                 </div>
+                {/* Sheriff Home Anchor (Invisible) */}
+                <div ref={sheriffHomeRef} className="w-2 h-2 mt-4 opacity-0"></div>
             </div>
 
+            {/* High Score Board */}
             <div className="bg-white/80 backdrop-blur-sm rounded-2xl px-4 py-2 border-2 border-amber-500 shadow-lg transform rotate-2">
                 <span className="text-amber-800 font-bold text-lg md:text-xl block text-center">最高分</span>
                 <span className="text-3xl md:text-4xl font-black text-amber-600 block text-center">{highScore}</span>
@@ -628,6 +669,26 @@ export default function App() {
             </div>
         )}
       </main>
+      
+      {/* --- Floating Sheriff Actor --- */}
+      {/* Only visible during gameplay */}
+      {(gameState === 'PLAYING' || gameState === 'PAUSED') && sheriffPos && (
+          <div 
+            className="fixed z-50 pointer-events-none transition-all duration-300 ease-out"
+            style={{
+                left: sheriffPos.x,
+                top: sheriffPos.y,
+                transform: `translate(-50%, -50%) scale(${sheriffPos.scale}) rotate(${sheriffLookingRight ? '15deg' : '-15deg'}) scaleX(${sheriffLookingRight ? -1 : 1})`
+            }}
+          >
+              <div className="relative">
+                  <RenderBug type={sheriffBug} className="w-20 h-20 drop-shadow-2xl" />
+                  <div className={`absolute -top-2 ${sheriffLookingRight ? '-left-2' : '-right-2'} bg-yellow-400 text-xs font-bold px-2 py-0.5 rounded-full border border-black shadow`}>
+                      警长
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* --- Visual Hit Feedback --- */}
       {hitFeedback.map(fb => (
@@ -669,24 +730,54 @@ export default function App() {
         </div>
       )}
 
-      {/* --- PAUSE Overlay --- */}
+      {/* --- PAUSE Overlay (Redesigned) --- */}
       {gameState === 'PAUSED' && (
         <div className="absolute inset-0 bg-black/40 backdrop-blur-md z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl p-8 max-w-sm w-full text-center border-8 border-amber-400 shadow-2xl animate-pop">
-            <h2 className="text-4xl font-black text-slate-800 mb-6">游戏暂停</h2>
+          
+          {/* Ropes hanging from top */}
+          <div className="absolute top-0 left-[30%] md:left-[40%] h-[50%] w-2 bg-[#5D4037]"></div>
+          <div className="absolute top-0 right-[30%] md:right-[40%] h-[50%] w-2 bg-[#5D4037]"></div>
+
+          <div className="relative bg-[#FFECB3] rounded-3xl p-8 max-w-sm w-full text-center border-8 border-[#5D4037] shadow-2xl animate-pop transform translate-y-10">
+            {/* Nail heads on the board */}
+            <div className="absolute top-4 left-4 w-4 h-4 rounded-full bg-[#3E2723] opacity-60"></div>
+            <div className="absolute top-4 right-4 w-4 h-4 rounded-full bg-[#3E2723] opacity-60"></div>
+            <div className="absolute bottom-4 left-4 w-4 h-4 rounded-full bg-[#3E2723] opacity-60"></div>
+            <div className="absolute bottom-4 right-4 w-4 h-4 rounded-full bg-[#3E2723] opacity-60"></div>
+
+            <h2 className="text-4xl font-black text-[#5D4037] mb-8 tracking-wide drop-shadow-sm">
+                暂停休息
+            </h2>
+            
             <div className="flex flex-col gap-4">
+                {/* Resume Button - Biggest & Green */}
                 <button 
                     onClick={resumeGame}
-                    className="w-full bg-green-500 hover:bg-green-600 text-white text-2xl font-bold py-3 rounded-xl shadow-[0_4px_0_#15803d] active:shadow-none active:translate-y-[4px] transition-all flex items-center justify-center gap-2"
+                    className="w-full bg-green-500 hover:bg-green-600 text-white text-2xl font-black py-4 rounded-2xl shadow-[0_6px_0_#15803d] active:shadow-none active:translate-y-[6px] transition-all flex items-center justify-center gap-3 group"
                 >
-                    <PlayIcon className="w-8 h-8" /> 继续游戏
+                    <PlayIcon className="w-8 h-8 group-hover:scale-110 transition-transform" /> 
+                    继续游戏
                 </button>
-                <button 
-                    onClick={quitToMenu}
-                    className="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-xl font-bold py-3 rounded-xl shadow-[0_4px_0_#94a3b8] active:shadow-none active:translate-y-[4px] transition-all flex items-center justify-center gap-2"
-                >
-                    <HomeIcon className="w-6 h-6" /> 返回主页
-                </button>
+
+                <div className="grid grid-cols-2 gap-3 mt-2">
+                    {/* Restart Button - Yellow/Orange */}
+                    <button 
+                        onClick={quitToMenu}
+                        className="bg-amber-400 hover:bg-amber-500 text-amber-900 text-lg font-bold py-3 rounded-xl shadow-[0_4px_0_#b45309] active:shadow-none active:translate-y-[4px] transition-all flex flex-col items-center justify-center gap-1 group"
+                    >
+                        <RefreshIcon className="w-6 h-6 group-hover:rotate-180 transition-transform duration-500" />
+                        重新开始
+                    </button>
+
+                    {/* Portal Button - Sky Blue */}
+                    <a 
+                        href={GAME_PORTAL_URL}
+                        className="bg-sky-400 hover:bg-sky-500 text-white text-lg font-bold py-3 rounded-xl shadow-[0_4px_0_#0369a1] active:shadow-none active:translate-y-[4px] transition-all flex flex-col items-center justify-center gap-1 group"
+                    >
+                        <HomeIcon className="w-6 h-6 group-hover:-translate-y-1 transition-transform" />
+                        返回大厅
+                    </a>
+                </div>
             </div>
           </div>
         </div>
@@ -762,6 +853,48 @@ export default function App() {
                      <p className="text-center text-sm text-slate-400 mt-2">注意：打中良民不得分哦！</p>
                  </div>
 
+                 {/* Step 3: Difficulty */}
+                 <div className="mb-8">
+                     <div className="flex items-center gap-2 mb-4">
+                        <div className="bg-purple-400 rounded-full p-2">
+                            <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                         </div>
+                         <h3 className="text-xl font-bold text-slate-700">第三步：选择挑战难度</h3>
+                     </div>
+                     <div className="flex justify-center gap-3 md:gap-6">
+                         <button
+                            onClick={() => selectDifficulty('EASY')}
+                            className={`px-4 py-3 rounded-2xl font-black text-lg transition-all transform hover:scale-105 flex-1 max-w-[120px]
+                                ${difficulty === 'EASY' 
+                                    ? 'bg-green-100 border-4 border-green-500 text-green-700 shadow-lg scale-105 ring-2 ring-green-200' 
+                                    : 'bg-slate-50 border-2 border-slate-200 text-slate-400 hover:bg-green-50 hover:text-green-600'}`}
+                         >
+                             简单
+                             <div className="text-xs font-normal mt-1 opacity-80">1只/秒</div>
+                         </button>
+                         <button
+                            onClick={() => selectDifficulty('NORMAL')}
+                            className={`px-4 py-3 rounded-2xl font-black text-lg transition-all transform hover:scale-105 flex-1 max-w-[120px]
+                                ${difficulty === 'NORMAL' 
+                                    ? 'bg-blue-100 border-4 border-blue-500 text-blue-700 shadow-lg scale-105 ring-2 ring-blue-200' 
+                                    : 'bg-slate-50 border-2 border-slate-200 text-slate-400 hover:bg-blue-50 hover:text-blue-600'}`}
+                         >
+                             普通
+                             <div className="text-xs font-normal mt-1 opacity-80">1~3只/秒</div>
+                         </button>
+                         <button
+                            onClick={() => selectDifficulty('HARD')}
+                            className={`px-4 py-3 rounded-2xl font-black text-lg transition-all transform hover:scale-105 flex-1 max-w-[120px]
+                                ${difficulty === 'HARD' 
+                                    ? 'bg-red-100 border-4 border-red-500 text-red-700 shadow-lg scale-105 ring-2 ring-red-200' 
+                                    : 'bg-slate-50 border-2 border-slate-200 text-slate-400 hover:bg-red-50 hover:text-red-600'}`}
+                         >
+                             困难
+                             <div className="text-xs font-normal mt-1 opacity-80">速度↑</div>
+                         </button>
+                     </div>
+                 </div>
+
                  <button 
                     onClick={handleReallyStartGame}
                     className="w-full bg-sky-500 hover:bg-sky-600 text-white text-2xl font-bold py-4 rounded-xl shadow-[0_4px_0_#0369a1] active:shadow-none active:translate-y-[4px] transition-all"
@@ -813,6 +946,12 @@ export default function App() {
                 >
                     再玩一次
                 </button>
+            </div>
+             {/* Back to Home Link for Game Over Screen too */}
+             <div className="mt-6">
+                 <a href={GAME_PORTAL_URL} className="text-sky-600 hover:text-sky-800 font-bold text-sm underline decoration-2 underline-offset-4 transition-colors">
+                     返回游戏大厅
+                 </a>
             </div>
           </div>
         </div>

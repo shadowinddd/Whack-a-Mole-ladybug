@@ -14,6 +14,8 @@ export enum BugType {
   NONE = 'NONE'
 }
 
+export type Difficulty = 'EASY' | 'NORMAL' | 'HARD';
+
 export interface BugEntity {
   id: number;
   type: BugType;
